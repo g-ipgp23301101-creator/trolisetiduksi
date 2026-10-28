@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Troli Pengguna Bijak: Misi Pilih Barang!</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- MediaPipe Hands & Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: 'Fredoka', 'Nunito', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        /* Neon Glow Effects */
+        .glow-title {
+            text-shadow: 0 0 10px #3b82f6, 0 0 20px #93c5fd, 0 0 30px #60a5fa;
+        }
+
+        .glow-cart {
+            box-shadow: 0 0 25px rgba(59, 130, 246, 0.5), inset 0 0 15px rgba(147, 197, 253, 0.3);
+            border: 3px solid rgba(147, 197, 253, 0.8);
+        }
+
+        .glow-cart-hover {
+            box-shadow: 0 0 40px rgba(74, 222, 128, 0.8), inset 0 0 25px rgba(187, 247, 208, 0.5);
+            border-color: #4ade80 !important;
+        }
+
+        .item-card {
+            transition: transform 0.15s ease-out, box-shadow 0.2s ease;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(8px);
+        }
+
+        .item-card:hover, .item-card-hover {
+            box-shadow: 0 0 25px #facc15, 0 0 10px #fef08a;
+            border-color: #facc15;
+        }
+
+        .item-dragging {
+            transform: scale(1.15) rotate(3deg) !important;
+            box-shadow: 0 20px 35px rgba(0, 0, 0, 0.6), 0 0 35px #38bdf8;
+            z-index: 100 !important;
+            cursor: grabbing;
+        }
+
+        /* Pulsing & Floating Animations */
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-10px) rotate(1.5deg); }
+        }
+
+        .animate-float {
+            animation: float 3.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+
+        .animate-pulse-ring {
+            animation: pulse-ring 2s infinite ease-in-out;
+        }
+
+        /* Custom Scrollbar for Info Panels */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #3b82f6;
+            border-radius: 10px;
+        }
+
+        /* Custom Hand Cursor Pointer */
+        #handCursor {
+            pointer-events: none;
+            transition: width 0.1s, height 0.1s, background-color 0.1s;
+        }
+
+        .pinched #handCursorInner {
+            background-color: #ef4444 !important;
+            transform: scale(0.7);
+            box-shadow: 0 0 20px #ef4444, 0 0 40px #f87171;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen flex flex-col justify-between p-4 relative select-none">
+
+    <!-- Canvas Background for Particles -->
+    <canvas id="bgCanvas" class="absolute inset-0 z-0 pointer-events-none w-full h-full"></canvas>
+
+    <!-- Hidden Video Element for MediaPipe Camera Input -->
+    <video id="webcam" class="hidden" playsinline></video>
+
+    <!-- TOP HEADER / STATUS BAR -->
+    <header class="relative z-10 flex justify-between items-center bg-slate-900/80 backdrop-blur-md px-6 py-3 rounded-2xl border border-slate-700/60 shadow-xl">
+        <div class="flex items-center gap-4">
+            <div class="bg-gradient-to-r from-blue-600 to-indigo-600 p-3 rounded-xl shadow-lg border border-blue-400/30">
+                <i class="fa-solid font-bold fa-cart-shopping text-white text-2xl sm:text-3xl"></i>
+            </div>
+            <div>
+                <h1 class="text-xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-pink-400 to-cyan-300 tracking-wide glow-title">
+                    TROLI PENGGUNA BIJAK
+                </h1>
+                <p class="text-xs sm:text-sm text-cyan-200 font-semibold tracking-wider">
+                    MISI PILIH BARANG! • SET INDUKSI PdP BAHASA MELAYU TAHUN 5
+                </p>
+            </div>
+        </div>
+
+        <!-- Mode Indicator & Quick Action Controls -->
+        <div class="flex items-center gap-3">
+            <div id="cameraStatusBadge" class="hidden sm:flex items-center gap-2 bg-slate-800/90 border border-slate-600 px-3 py-1.5 rounded-full text-xs font-bold text-slate-300">
+                <span id="statusDot" class="w-3 h-3 rounded-full bg-red-500 animate-pulse"></span>
+                <span id="statusText">Kamera Matik</span>
+            </div>
+
+            <button id="toggleAudioBtn" onclick="toggleAudio()" class="p-3 bg-slate-800 hover:bg-slate-700 text-yellow-400 rounded-xl border border-slate-600 transition shadow-md flex items-center justify-center">
+                <i id="audioIcon" class="fa-solid fa-volume-high text-lg"></i>
+            </button>
+
+            <button onclick="toggleHelpModal()" class="p-3 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-xl border border-slate-600 transition shadow-md flex items-center justify-center">
+                <i class="fa-solid fa-circle-question text-lg"></i>
+            </button>
+
+            <button onclick="resetGame()" class="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-extrabold rounded-xl shadow-lg transition border border-amber-300/40 text-sm flex items-center gap-2">
+                <i class="fa-solid fa-rotate-right"></i>
+                <span class="hidden md:inline">Mula Semula</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- INSTRUCTION BANNER -->
+    <div id="instructionBanner" class="relative z-10 my-2 mx-auto max-w-4xl w-full bg-gradient-to-r from-cyan-900/80 via-blue-900/80 to-purple-900/80 backdrop-blur-md border border-cyan-400/40 rounded-xl px-4 py-2 text-center text-cyan-100 shadow-lg flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 text-yellow-300 font-bold text-sm sm:text-base">
+            <i class="fa-solid fa-bullhorn text-lg animate-bounce"></i>
+            <span>ARAHAN MISI:</span>
+        </div>
+        <p id="instructionText" class="text-xs sm:text-sm md:text-base font-bold text-white flex-1 truncate">
+            "BANTU KAMI MEMILIH BARANG YANG DIPERLUKAN! Cubit & tarik barang harian ke dalam troli."
+        </p>
+        <span id="inputModeTag" class="text-xs font-black bg-cyan-500/30 text-cyan-200 border border-cyan-400/40 px-2 py-0.5 rounded-md uppercase">
+            Mod: Tetikus
+        </span>
+    </div>
+
+    <!-- MAIN GAME WORKSPACE AREA -->
+    <main id="gameArea" class="relative z-10 flex-1 grid grid-cols-1 md:grid-cols-12 gap-4 my-2 overflow-hidden items-stretch">
+
+        <!-- ITEMS CONTAINER (Left & Center Floating Area) -->
+        <div id="itemsContainer" class="md:col-span-8 lg:col-span-8 relative rounded-3xl bg-slate-900/40 border border-slate-700/50 backdrop-blur-sm p-4 overflow-hidden min-h-[360px] flex flex-wrap items-center justify-center gap-4">
+            <!-- Items are dynamically rendered via JS here -->
+        </div>
+
+        <!-- DIGITAL SHOPPING CART AREA (Right / Target Zone) -->
+        <div id="cartArea" class="md:col-span-4 lg:col-span-4 flex flex-col justify-between rounded-3xl bg-gradient-to-b from-slate-900/80 to-blue-950/90 backdrop-blur-md p-5 border-2 border-blue-400/40 glow-cart relative overflow-hidden">
+            
+            <!-- Cart Header & Counter -->
+            <div class="flex justify-between items-center pb-3 border-b border-slate-700/80">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-basket-shopping text-cyan-400 text-xl"></i>
+                    <h2 class="font-black text-lg text-white tracking-wide">TROLI SAYA</h2>
+                </div>
+                <div class="bg-blue-600/60 border border-blue-400/60 px-3 py-1 rounded-full text-xs font-black text-yellow-300 tracking-wider">
+                    BARANG DIPILIH: <span id="cartCount" class="text-sm text-white">0</span>/6
+                </div>
+            </div>
+
+            <!-- Cart Items Display Box (Drop Target Zone) -->
+            <div id="cartDropZone" class="flex-1 my-3 bg-slate-950/60 rounded-2xl border-2 border-dashed border-blue-400/40 p-3 flex flex-col gap-2 overflow-y-auto min-h-[180px] max-h-[300px] md:max-h-none justify-start transition-all duration-300">
+                <div id="emptyCartNotice" class="h-full flex flex-col items-center justify-center text-slate-500 text-center py-8">
+                    <i class="fa-solid fa-cart-arrow-down text-4xl mb-2 animate-bounce"></i>
+                    <p class="text-xs font-bold">Tarik dan lepaskan barang ke kawasan troli ini!</p>
+                </div>
+                <!-- Dynamic Cart List Items -->
+            </div>
+
+            <!-- Cart Action Buttons -->
+            <div class="flex flex-col gap-2 pt-2 border-t border-slate-800">
+                <button id="checkSelectionBtn" onclick="evaluateCartSelection()" class="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-black text-sm uppercase tracking-wider rounded-xl shadow-lg border border-green-300/40 transition transform active:scale-95 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-square-check text-lg"></i>
+                    SEMAK PILIHAN
+                </button>
+                
+                <button onclick="clearCart()" class="w-full py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-lg transition border border-slate-700 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-trash-can"></i>
+                    Kosongkan Troli
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- FOOTER STATUS & WEBCAM OVERLAY -->
+    <footer class="relative z-10 flex justify-between items-center text-xs font-bold text-slate-400 bg-slate-950/60 backdrop-blur-md px-4 py-2 rounded-xl border border-slate-800">
+        <div class="flex items-center gap-2">
+            <i class="fa-solid fa-chalkboard-user text-cyan-400"></i>
+            <span>Set Induksi PdP: Bahasa Melayu Tahun 5 (Ekonomi & Keusahawanan)</span>
+        </div>
+        <div id="handDetectionMessage" class="text-yellow-400 font-extrabold flex items-center gap-1">
+            <i class="fa-solid fa-hand"></i>
+            <span id="handDetectedText">Sedia untuk bermain</span>
+        </div>
+    </footer>
+
+    <!-- DIGITAL HAND CURSOR OVERLAY (MediaPipe Pointer) -->
+    <div id="handCursor" class="fixed pointer-events-none z-50 transform -translate-x-1/2 -translate-y-1/2 transition-all duration-75 hidden">
+        <div id="handCursorInner" class="w-10 h-10 rounded-full border-2 border-cyan-300 bg-cyan-400/40 shadow-[0_0_20px_#38bdf8] flex items-center justify-center text-white text-xs font-black animate-ping-slow">
+            <i class="fa-solid fa-hand-pointer text-sm"></i>
+        </div>
+        <div id="cursorLabel" class="absolute left-12 top-0 bg-slate-900/90 text-cyan-300 border border-cyan-400/50 text-[10px] font-bold px-2 py-0.5 rounded shadow-lg whitespace-nowrap hidden">
+            TANGAN DIKESAN!
+        </div>
+    </div>
+
+    <!-- MODAL 1: START SCREEN / SPLASH SCREEN -->
+    <div id="startModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-lg p-4">
+        <div class="max-w-2xl w-full bg-gradient-to-b from-slate-900 to-indigo-950 rounded-3xl border-2 border-cyan-400/60 p-6 md:p-8 shadow-2xl text-center relative overflow-hidden">
+            <div class="absolute -top-24 -right-24 w-48 h-48 bg-cyan-500/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -bottom-24 -left-24 w-48 h-48 bg-pink-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="inline-block p-4 bg-gradient-to-tr from-blue-600 to-cyan-500 rounded-2xl shadow-xl border border-cyan-300/40 mb-4 animate-bounce">
+                <i class="fa-solid fa-cart-flatbed-suitcases text-5xl text-white"></i>
+            </div>
+
+            <h1 class="text-3xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-pink-400 to-cyan-300 mb-2 glow-title">
+                TROLI PENGGUNA BIJAK
+            </h1>
+            <p class="text-lg md:text-xl font-extrabold text-cyan-200 mb-6">
+                🛒 MISI PILIH BARANG!
+            </p>
+
+            <div class="bg-slate-800/80 border border-slate-700 rounded-2xl p-4 text-left text-xs md:text-sm text-slate-200 mb-6 space-y-2">
+                <p class="font-extrabold text-yellow-300 text-base mb-2">
+                    <i class="fa-solid fa-compass"></i> ARAHAN PERMAINAN (KAWALAN GERAKAN TANGAN):
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div class="flex items-start gap-2 bg-slate-900/60 p-2 rounded-lg border border-slate-700">
+                        <span class="bg-cyan-500 text-slate-900 font-black rounded-full w-5 h-5 flex items-center justify-center text-xs shrink-0">1</span>
+                        <span>Halakan <b>jari telunjuk</b> ke arah barang di skrin.</span>
+                    </div>
+                    <div class="flex items-start gap-2 bg-slate-900/60 p-2 rounded-lg border border-slate-700">
+                        <span class="bg-cyan-500 text-slate-900 font-black rounded-full w-5 h-5 flex items-center justify-center text-xs shrink-0">2</span>
+                        <span><b>Cubit</b> ibu jari & jari telunjuk untuk memegang barang.</span>
+                    </div>
+                    <div class="flex items-start gap-2 bg-slate-900/60 p-2 rounded-lg border border-slate-700">
+                        <span class="bg-cyan-500 text-slate-900 font-black rounded-full w-5 h-5 flex items-center justify-center text-xs shrink-0">3</span>
+                        <span><b>Tarik tangan</b> membawa barang ke dalam kawasan <b>Troli</b>.</span>
+                    </div>
+                    <div class="flex items-start gap-2 bg-slate-900/60 p-2 rounded-lg border border-slate-700">
+                        <span class="bg-cyan-500 text-slate-900 font-black rounded-full w-5 h-5 flex items-center justify-center text-xs shrink-0">4</span>
+                        <span><b>Lepaskan cubitan</b> untuk memasukkan barang.</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-3 justify-center items-center">
+                <button onclick="startWithCamera()" class="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-black text-base rounded-2xl shadow-xl border border-cyan-300/50 transition transform hover:scale-105 active:scale-95 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-video text-xl"></i>
+                    AKTIFKAN KAMERA (GESTURE)
+                </button>
+
+                <button onclick="startWithMouse()" class="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-base rounded-2xl shadow-xl border border-purple-300/40 transition transform hover:scale-105 active:scale-95 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-computer-mouse text-xl"></i>
+                    MAIN DENGAN TETIKUS / SENTUH
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: EVALUATION / PDP DISCUSSION PANEL -->
+    <div id="evaluationModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 hidden">
+        <div class="max-w-3xl w-full bg-slate-900 rounded-3xl border-2 border-emerald-400/80 p-6 shadow-2xl relative max-h-[90vh] flex flex-col justify-between">
+            <div>
+                <!-- Header -->
+                <div class="flex justify-between items-center pb-4 border-b border-slate-800">
+                    <div class="flex items-center gap-3">
+                        <div class="p-3 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-400/40">
+                            <i class="fa-solid fa-clipboard-check text-2xl"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-2xl font-black text-white">KEPUTUSAN SEMAKAN PILIHAN</h2>
+                            <p class="text-xs text-emerald-300 font-bold">Refleksi Pengurusan Kewangan & Keusahawanan</p>
+                        </div>
+                    </div>
+                    <button onclick="closeEvaluationModal()" class="text-slate-400 hover:text-white p-2 text-xl">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <!-- Analysis Content Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 my-6">
+                    <!-- Barang Keperluan -->
+                    <div class="bg-slate-950/80 rounded-2xl p-4 border border-green-500/40 flex flex-col">
+                        <div class="flex justify-between items-center mb-3 pb-2 border-b border-green-500/30">
+                            <span class="font-extrabold text-green-400 text-sm flex items-center gap-2">
+                                <i class="fa-solid fa-circle-check"></i> BARANG KEPERLUAN
+                            </span>
+                            <span id="needsCountBadge" class="bg-green-500/20 text-green-300 border border-green-400/40 text-xs px-2.5 py-0.5 rounded-full font-black">0 Disimpan</span>
+                        </div>
+                        <div id="needsList" class="space-y-2 flex-1 min-h-[100px]">
+                            <!-- Dynamic Needs Items -->
+                        </div>
+                        <p class="text-[11px] text-slate-400 mt-3 italic border-t border-slate-800 pt-2">
+                            💡 **Keperluan**: Barang penting yang mesti ada untuk kelangsungan hidup harian.
+                        </p>
+                    </div>
+
+                    <!-- Barang Kehendak -->
+                    <div class="bg-slate-950/80 rounded-2xl p-4 border border-amber-500/40 flex flex-col">
+                        <div class="flex justify-between items-center mb-3 pb-2 border-b border-amber-500/30">
+                            <span class="font-extrabold text-amber-400 text-sm flex items-center gap-2">
+                                <i class="fa-solid fa-heart"></i> BARANG KEHENDAK
+                            </span>
+                            <span id="wantsCountBadge" class="bg-amber-500/20 text-amber-300 border border-amber-400/40 text-xs px-2.5 py-0.5 rounded-full font-black">0 Disimpan</span>
+                        </div>
+                        <div id="wantsList" class="space-y-2 flex-1 min-h-[100px]">
+                            <!-- Dynamic Wants Items -->
+                        </div>
+                        <p class="text-[11px] text-slate-400 mt-3 italic border-t border-slate-800 pt-2">
+                            💡 **Kehendak**: Barang pelengkap yang menjadikan hidup lebih selesa tetapi boleh ditangguhkan.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Teacher Discussion Prompt -->
+                <div class="bg-blue-950/60 border border-blue-400/40 rounded-xl p-4 text-xs text-blue-200">
+                    <p class="font-bold text-yellow-300 mb-1 flex items-center gap-2">
+                        <i class="fa-solid fa-chalkboard-user"></i> SOALAN PERBINCANGAN PdP (GURU & MURID):
+                    </p>
+                    <p id="pdpFeedbackText">
+                        "Adakah anda telah memberi keutamaan kepada barang keperluan dahulu sebelum barang kehendak? Mengapa barang keperluan penting untuk perbelanjaan harian?"
+                    </p>
+                </div>
+            </div>
+
+            <!-- Modal Action Buttons -->
+            <div class="flex gap-3 mt-6">
+                <button onclick="closeEvaluationModal()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-sm transition">
+                    Sambung Memilih
+                </button>
+                <button onclick="resetGame(); closeEvaluationModal();" class="flex-1 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-sm transition shadow-lg">
+                    Main Misi Baharu
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 3: HELP & GUIDE -->
+    <div id="helpModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 hidden">
+        <div class="max-w-md w-full bg-slate-900 rounded-3xl border border-slate-700 p-6 shadow-2xl">
+            <h3 class="text-xl font-black text-cyan-300 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-circle-info"></i> PANDUAN PENGGUNAAN
+            </h3>
+            <div class="text-xs text-slate-300 space-y-3 leading-relaxed">
+                <p><b>1. Kawalan Gestur Kamera:</b> Gunakan jari telunjuk untuk menggerakkan kursor. Cubit rapat (ibu jari + jari telunjuk) untuk menarik (drag) dan lepaskan cubitan di atas kawasan troli.</p>
+                <p><b>2. Tetikus / Skrin Sentuh:</b> Jika menggunakan laptop tanpa kamera atau Smart TV skrin sentuh, anda boleh klik dan tarik objek secara biasa.</p>
+                <p><b>3. Tujuan Pembelajaran:</b> Permainan ini membantu murid mengenal pasti keutamaan pembelian antara <b>Barang Keperluan</b> dan <b>Barang Kehendak</b>.</p>
+            </div>
+            <button onclick="toggleHelpModal()" class="w-full mt-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs">
+                Tutup Panduan
+            </button>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT GAME LOGIC & MEDIAPIPE HAND TRACKING -->
+    <script>
+        /* ==========================================================================
+           1. DATA ITEMS & STATE CONFIGURATION
+           ========================================================================== */
+        const ITEMS_DATA = [
+            { id: 'nasi', name: 'NASI', category: 'keperluan', emoji: '🍚', color: 'from-amber-100 to-amber-200 border-amber-400 text-amber-950' },
+            { id: 'gula_gula', name: 'GULA-GULA', category: 'kehendak', emoji: '🍬', color: 'from-pink-400 to-rose-500 border-pink-300 text-white' },
+            { id: 'keropok', name: 'KEROPOK', category: 'kehendak', emoji: '🍘', color: 'from-orange-400 to-amber-500 border-orange-300 text-white' },
+            { id: 'roti', name: 'ROTI', category: 'keperluan', emoji: '🍞', color: 'from-yellow-200 to-amber-300 border-yellow-500 text-amber-950' },
+            { id: 'ikan', name: 'IKAN', category: 'keperluan', emoji: '🐟', color: 'from-cyan-400 to-blue-500 border-cyan-300 text-white' },
+            { id: 'ayam', name: 'AYAM', category: 'keperluan', emoji: '🍗', color: 'from-red-400 to-orange-500 border-red-300 text-white' }
+        ];
+
+        let state = {
+            cartItems: [],          // Items inside cart
+            availableItems: [],     // Active items floating
+            draggedItem: null,      // Currently dragged item ID
+            isPinched: false,       // Pinch state
+            cursorPos: { x: -100, y: -100 },
+            smoothCursor: { x: -100, y: -100 },
+            cameraActive: false,
+            audioMuted: false,
+            dragOffset: { x: 0, y: 0 }
+        };
+
+        // DOM Element Cache
+        const itemsContainer = document.getElementById('itemsContainer');
+        const cartDropZone = document.getElementById('cartDropZone');
+        const cartCountEl = document.getElementById('cartCount');
+        const emptyCartNotice = document.getElementById('emptyCartNotice');
+        const handCursor = document.getElementById('handCursor');
+        const cursorLabel = document.getElementById('cursorLabel');
+        const handDetectedText = document.getElementById('handDetectedText');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const inputModeTag = document.getElementById('inputModeTag');
+
+        /* ==========================================================================
+           2. WEB AUDIO API (SYNTHESIZED SOUND EFFECTS)
+           ========================================================================== */
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playSound(type) {
+            if (state.audioMuted) return;
+            initAudio();
+            if (!audioCtx) return;
+
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            if (type === 'hover') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(440, now);
+                osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
+                gain.gain.setValueAtTime(0.05, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+                osc.start(now);
+                osc.stop(now + 0.08);
+            } else if (type === 'pickup') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.exponentialRampToValueAtTime(600, now + 0.12);
+                gain.gain.setValueAtTime(0.15, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+                osc.start(now);
+                osc.stop(now + 0.12);
+            } else if (type === 'drop') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(523.25, now); // C5
+                osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
+                osc.frequency.setValueAtTime(783.99, now + 0.16); // G5
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            } else if (type === 'success') {
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((freq, idx) => {
+                    const o = audioCtx.createOscillator();
+                    const g = audioCtx.createGain();
+                    o.connect(g);
+                    g.connect(audioCtx.destination);
+                    o.type = 'triangle';
+                    o.frequency.value = freq;
+                    g.gain.setValueAtTime(0.15, now + idx * 0.08);
+                    g.gain.linearRampToValueAtTime(0.01, now + idx * 0.08 + 0.2);
+                    o.start(now + idx * 0.08);
+                    o.stop(now + idx * 0.08 + 0.2);
+                });
+            }
+        }
+
+        function toggleAudio() {
+            state.audioMuted = !state.audioMuted;
+            document.getElementById('audioIcon').className = state.audioMuted 
+                ? 'fa-solid fa-volume-xmark text-lg text-red-400' 
+                : 'fa-solid fa-volume-high text-lg text-yellow-400';
+        }
+
+        /* ==========================================================================
+           3. BACKGROUND PARTICLE CANVAS ANIMATION
+           ========================================================================== */
+        const bgCanvas = document.getElementById('bgCanvas');
+        const bgCtx = bgCanvas.getContext('2d');
+        let particles = [];
+
+        function resizeCanvas() {
+            bgCanvas.width = window.innerWidth;
+            bgCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        for (let i = 0; i < 35; i++) {
+            particles.push({
+                x: Math.random() * window.innerWidth,
+                y: Math.random() * window.innerHeight,
+                radius: Math.random() * 3 + 1,
+                color: ['rgba(56, 189, 248, 0.3)', 'rgba(236, 72, 153, 0.3)', 'rgba(250, 204, 21, 0.3)'][Math.floor(Math.random() * 3)],
+                vx: (Math.random() - 0.5) * 0.5,
+                vy: (Math.random() - 0.5) * 0.5
+            });
+        }
+
+        function animateCanvas() {
+            bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+            particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                if (p.x < 0 || p.x > bgCanvas.width) p.vx *= -1;
+                if (p.y < 0 || p.y > bgCanvas.height) p.vy *= -1;
+
+                bgCtx.beginPath();
+                bgCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                bgCtx.fillStyle = p.color;
+                bgCtx.fill();
+            });
+            requestAnimationFrame(animateCanvas);
+        }
+        animateCanvas();
+
+        /* ==========================================================================
+           4. GAME SETUP & RENDER FUNCTIONS
+           ========================================================================== */
+        function initGame() {
+            state.cartItems = [];
+            state.availableItems = JSON.parse(JSON.stringify(ITEMS_DATA));
+            renderItems();
+            renderCart();
+        }
+
+        function renderItems() {
+            itemsContainer.innerHTML = '';
+            
+            // Random scatter layout inside container
+            state.availableItems.forEach((item, index) => {
+                const card = document.createElement('div');
+                card.id = `item-${item.id}`;
+                card.dataset.itemId = item.id;
+                card.className = `item-card absolute cursor-grab border-2 rounded-2xl p-4 md:p-5 flex flex-col items-center justify-center bg-gradient-to-br ${item.color} animate-float select-none`;
+                
+                // Position calculations for dispersion
+                const cols = 3;
+                const row = Math.floor(index / cols);
+                const col = index % cols;
+                const posX = 15 + col * 28 + (Math.random() * 6 - 3);
+                const posY = 12 + row * 42 + (Math.random() * 6 - 3);
+
+                card.style.left = `${posX}%`;
+                card.style.top = `${posY}%`;
+                card.style.animationDelay = `${index * 0.4}s`;
+
+                card.innerHTML = `
+                    <span class="text-4xl md:text-6xl mb-2 filter drop-shadow-md pointer-events-none">${item.emoji}</span>
+                    <span class="font-black text-sm md:text-base tracking-wider uppercase pointer-events-none drop-shadow">${item.name}</span>
+                `;
+
+                // Mouse & Touch Event Listeners for Fallback
+                card.addEventListener('mousedown', (e) => handleMouseDown(e, item.id));
+                card.addEventListener('touchstart', (e) => handleTouchStart(e, item.id), { passive: false });
+
+                itemsContainer.appendChild(card);
+            });
+        }
+
+        function renderCart() {
+            cartCountEl.textContent = state.cartItems.length;
+            
+            if (state.cartItems.length === 0) {
+                emptyCartNotice.classList.remove('hidden');
+                cartDropZone.querySelectorAll('.cart-item-entry').forEach(el => el.remove());
+            } else {
+                emptyCartNotice.classList.add('hidden');
+                cartDropZone.querySelectorAll('.cart-item-entry').forEach(el => el.remove());
+
+                state.cartItems.forEach(item => {
+                    const row = document.createElement('div');
+                    row.className = 'cart-item-entry flex items-center justify-between bg-slate-900/90 border border-blue-500/30 p-2.5 rounded-xl shadow-md text-white animate-fade-in';
+                    row.innerHTML = `
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl">${item.emoji}</span>
+                            <span class="font-extrabold text-xs md:text-sm tracking-wide text-cyan-200">${item.name}</span>
+                        </div>
+                        <i class="fa-solid fa-circle-check text-green-400 text-base"></i>
+                    `;
+                    cartDropZone.appendChild(row);
+                });
+            }
+        }
+
+        /* ==========================================================================
+           5. DRAG & DROP & COLLISION LOGIC
+           ========================================================================== */
+        function checkCollisionWithCart(x, y) {
+            const cartRect = cartDropZone.getBoundingClientRect();
+            return (
+                x >= cartRect.left &&
+                x <= cartRect.right &&
+                y >= cartRect.top &&
+                y <= cartRect.bottom
+            );
+        }
+
+        function addItemToCart(itemId) {
+            const itemIdx = state.availableItems.findIndex(i => i.id === itemId);
+            if (itemIdx === -1) return;
+
+            const item = state.availableItems[itemIdx];
+            state.availableItems.splice(itemIdx, 1);
+            state.cartItems.push(item);
+
+            playSound('drop');
+
+            // Remove element from screen
+            const el = document.getElementById(`item-${itemId}`);
+            if (el) el.remove();
+
+            renderCart();
+
+            // Glow animation on cart drop
+            cartArea.classList.add('glow-cart-hover');
+            setTimeout(() => cartArea.classList.remove('glow-cart-hover'), 600);
+        }
+
+        /* ==========================================================================
+           6. MOUSE & TOUCH FALLBACK CONTROLS
+           ========================================================================== */
+        let activeMouseDrag = null;
+
+        function handleMouseDown(e, itemId) {
+            if (state.cameraActive) return; // Prioritize camera if active
+            e.preventDefault();
+            activeMouseDrag = itemId;
+            state.draggedItem = itemId;
+            playSound('pickup');
+
+            const card = document.getElementById(`item-${itemId}`);
+            if (card) card.classList.add('item-dragging');
+
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        }
+
+        function handleMouseMove(e) {
+            if (!activeMouseDrag) return;
+            const card = document.getElementById(`item-${activeMouseDrag}`);
+            if (!card) return;
+
+            const containerRect = itemsContainer.getBoundingClientRect();
+            const x = e.clientX - containerRect.left - card.offsetWidth / 2;
+            const y = e.clientY - containerRect.top - card.offsetHeight / 2;
+
+            card.style.left = `${x}px`;
+            card.style.top = `${y}px`;
+
+            // Check hover over cart
+            if (checkCollisionWithCart(e.clientX, e.clientY)) {
+                cartDropZone.classList.add('border-green-400', 'bg-green-950/20');
+            } else {
+                cartDropZone.classList.remove('border-green-400', 'bg-green-950/20');
+            }
+        }
+
+        function handleMouseUp(e) {
+            if (!activeMouseDrag) return;
+            const itemId = activeMouseDrag;
+            const card = document.getElementById(`item-${itemId}`);
+
+            cartDropZone.classList.remove('border-green-400', 'bg-green-950/20');
+
+            if (checkCollisionWithCart(e.clientX, e.clientY)) {
+                addItemToCart(itemId);
+            } else if (card) {
+                card.classList.remove('item-dragging');
+            }
+
+            activeMouseDrag = null;
+            state.draggedItem = null;
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        }
+
+        // Touch Handlers for Mobile / Touch Screen Smart TV
+        function handleTouchStart(e, itemId) {
+            if (state.cameraActive) return;
+            const touch = e.touches[0];
+            handleMouseDown({ preventDefault: () => {}, clientX: touch.clientX, clientY: touch.clientY }, itemId);
+
+            const touchMove = (te) => {
+                const t = te.touches[0];
+                handleMouseMove({ clientX: t.clientX, clientY: t.clientY });
+            };
+
+            const touchEnd = (te) => {
+                const t = te.changedTouches[0];
+                handleMouseUp({ clientX: t.clientX, clientY: t.clientY });
+                document.removeEventListener('touchmove', touchMove);
+                document.removeEventListener('touchend', touchEnd);
+            };
+
+            document.addEventListener('touchmove', touchMove, { passive: false });
+            document.addEventListener('touchend', touchEnd);
+        }
+
+        /* ==========================================================================
+           7. MEDIAPIPE HAND LANDMARKER & CAMERA TRACKING
+           ========================================================================== */
+        const videoElement = document.getElementById('webcam');
+
+        function startWithCamera() {
+            document.getElementById('startModal').classList.add('hidden');
+            initAudio();
+            initCamera();
+        }
+
+        function startWithMouse() {
+            document.getElementById('startModal').classList.add('hidden');
+            initAudio();
+            inputModeTag.textContent = 'Mod: Tetikus / Sentuh';
+        }
+
+        function initCamera() {
+            statusText.textContent = 'Memuatkan Kamera...';
+            
+            const hands = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.6,
+                minTrackingConfidence: 0.6
+            });
+
+            hands.onResults(onHandResults);
+
+            const camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await hands.send({ image: videoElement });
+                },
+                width: 640,
+                height: 480
+            });
+
+            camera.start()
+                .then(() => {
+                    state.cameraActive = true;
+                    statusDot.className = 'w-3 h-3 rounded-full bg-green-400 animate-ping';
+                    statusText.textContent = 'Kamera Aktif';
+                    inputModeTag.textContent = 'Mod: Hand Gesture (MediaPipe)';
+                    handCursor.classList.remove('hidden');
+                })
+                .catch(err => {
+                    console.error('Camera access error:', err);
+                    alert('Gagal mengakses kamera. Permainan ditukar ke mod Tetikus / Skrin Sentuh.');
+                    startWithMouse();
+                });
+        }
+
+        /* Hand Landmark Processing Loop */
+        function onHandResults(results) {
+            if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+                handDetectedText.textContent = 'Mencari tangan...';
+                handCursor.classList.add('opacity-30');
+                cursorLabel.classList.add('hidden');
+                
+                // Release dragged item if hand disappears
+                if (state.draggedItem) {
+                    releaseCameraDraggedItem();
+                }
+                return;
+            }
+
+            // Hand detected
+            handDetectedText.textContent = 'TANGAN DIKESAN!';
+            handCursor.classList.remove('opacity-30');
+            cursorLabel.classList.remove('hidden');
+
+            const landmarks = results.multiHandLandmarks[0];
+            
+            // Index Finger Tip (Landmark 8) & Thumb Tip (Landmark 4)
+            const indexTip = landmarks[8];
+            const thumbTip = landmarks[4];
+
+            // Screen Mapping (Mirrored coordinates for intuitive UI)
+            const screenX = (1 - indexTip.x) * window.innerWidth;
+            const screenY = indexTip.y * window.innerHeight;
+
+            // Exponential Smoothing for Cursor Movement
+            state.smoothCursor.x += (screenX - state.smoothCursor.x) * 0.45;
+            state.smoothCursor.y += (screenY - state.smoothCursor.y) * 0.45;
+
+            // Position Cursor UI
+            handCursor.style.left = `${state.smoothCursor.x}px`;
+            handCursor.style.top = `${state.smoothCursor.y}px`;
+
+            // Calculate Pinch Distance (Thumb to Index)
+            const dx = (thumbTip.x - indexTip.x) * window.innerWidth;
+            const dy = (thumbTip.y - indexTip.y) * window.innerHeight;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Pinch Threshold Check (pixels)
+            const PINCH_THRESHOLD = 50;
+            const isNowPinched = distance < PINCH_THRESHOLD;
+
+            if (isNowPinched) {
+                handCursor.classList.add('pinched');
+                if (!state.isPinched) {
+                    // Pinch Started
+                    state.isPinched = true;
+                    attemptCameraPickup(state.smoothCursor.x, state.smoothCursor.y);
+                } else if (state.draggedItem) {
+                    // Dragging Item with Camera
+                    moveCameraDraggedItem(state.smoothCursor.x, state.smoothCursor.y);
+                }
+            } else {
+                handCursor.classList.remove('pinched');
+                if (state.isPinched) {
+                    // Pinch Released
+                    state.isPinched = false;
+                    if (state.draggedItem) {
+                        releaseCameraDraggedItem(state.smoothCursor.x, state.smoothCursor.y);
+                    }
+                }
+            }
+
+            // Hover effects over items
+            if (!state.draggedItem) {
+                checkItemHover(state.smoothCursor.x, state.smoothCursor.y);
+            }
+        }
+
+        function checkItemHover(x, y) {
+            state.availableItems.forEach(item => {
+                const card = document.getElementById(`item-${item.id}`);
+                if (!card) return;
+                const rect = card.getBoundingClientRect();
+
+                if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                    card.classList.add('item-card-hover');
+                } else {
+                    card.classList.remove('item-card-hover');
+                }
+            });
+        }
+
+        function attemptCameraPickup(x, y) {
+            state.availableItems.forEach(item => {
+                const card = document.getElementById(`item-${item.id}`);
+                if (!card) return;
+                const rect = card.getBoundingClientRect();
+
+                if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                    state.draggedItem = item.id;
+                    card.classList.add('item-dragging');
+                    playSound('pickup');
+                }
+            });
+        }
+
+        function moveCameraDraggedItem(x, y) {
+            if (!state.draggedItem) return;
+            const card = document.getElementById(`item-${state.draggedItem}`);
+            if (!card) return;
+
+            const containerRect = itemsContainer.getBoundingClientRect();
+            const posX = x - containerRect.left - card.offsetWidth / 2;
+            const posY = y - containerRect.top - card.offsetHeight / 2;
+
+            card.style.left = `${posX}px`;
+            card.style.top = `${posY}px`;
+
+            if (checkCollisionWithCart(x, y)) {
+                cartDropZone.classList.add('border-green-400', 'bg-green-950/20');
+            } else {
+                cartDropZone.classList.remove('border-green-400', 'bg-green-950/20');
+            }
+        }
+
+        function releaseCameraDraggedItem(x, y) {
+            if (!state.draggedItem) return;
+            const itemId = state.draggedItem;
+            const card = document.getElementById(`item-${itemId}`);
+
+            cartDropZone.classList.remove('border-green-400', 'bg-green-950/20');
+
+            if (x && y && checkCollisionWithCart(x, y)) {
+                addItemToCart(itemId);
+            } else if (card) {
+                card.classList.remove('item-dragging');
+            }
+
+            state.draggedItem = null;
+        }
+
+        /* ==========================================================================
+           8. EVALUATION & PDP REFLECTION PANEL LOGIC
+           ========================================================================== */
+        function evaluateCartSelection() {
+            if (state.cartItems.length === 0) {
+                alert('Troli anda masih kosong! Sila pilih sekurang-kurangnya satu barang dahulu.');
+                return;
+            }
+
+            playSound('success');
+
+            const needsList = document.getElementById('needsList');
+            const wantsList = document.getElementById('wantsList');
+            const needsCountBadge = document.getElementById('needsCountBadge');
+            const wantsCountBadge = document.getElementById('wantsCountBadge');
+
+            needsList.innerHTML = '';
+            wantsList.innerHTML = '';
+
+            const needsInCart = state.cartItems.filter(i => i.category === 'keperluan');
+            const wantsInCart = state.cartItems.filter(i => i.category === 'kehendak');
+
+            needsCountBadge.textContent = `${needsInCart.length} Disimpan`;
+            wantsCountBadge.textContent = `${wantsInCart.length} Disimpan`;
+
+            if (needsInCart.length === 0) {
+                needsList.innerHTML = '<p class="text-slate-500 text-xs italic">Tiada barang keperluan dipilih.</p>';
+            } else {
+                needsInCart.forEach(i => {
+                    needsList.innerHTML += `
+                        <div class="flex items-center justify-between bg-slate-900 border border-green-500/30 p-2 rounded-xl text-xs font-bold text-green-200">
+                            <span>${i.emoji} ${i.name}</span>
+                            <span class="text-[10px] bg-green-500/20 text-green-300 px-2 py-0.5 rounded">Utama</span>
+                        </div>
+                    `;
+                });
+            }
+
+            if (wantsInCart.length === 0) {
+                wantsList.innerHTML = '<p class="text-slate-500 text-xs italic">Tiada barang kehendak dipilih. Syabas!</p>';
+            } else {
+                wantsInCart.forEach(i => {
+                    wantsList.innerHTML += `
+                        <div class="flex items-center justify-between bg-slate-900 border border-amber-500/30 p-2 rounded-xl text-xs font-bold text-amber-200">
+                            <span>${i.emoji} ${i.name}</span>
+                            <span class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded">Sampingan</span>
+                        </div>
+                    `;
+                });
+            }
+
+            document.getElementById('evaluationModal').classList.remove('hidden');
+        }
+
+        function closeEvaluationModal() {
+            document.getElementById('evaluationModal').classList.add('hidden');
+        }
+
+        function clearCart() {
+            initGame();
+            playSound('hover');
+        }
+
+        function resetGame() {
+            initGame();
+            playSound('hover');
+        }
+
+        function toggleHelpModal() {
+            const modal = document.getElementById('helpModal');
+            modal.classList.toggle('hidden');
+        }
+
+        // Initialize game environment on page load
+        window.onload = function() {
+            initGame();
+        };
+    </script>
+</body>
+</html>
